@@ -80,31 +80,38 @@ def problem2(pub_e, pub_n, oracle):
     reps = 100
     ct = uva_rsa.rsa_enc(pub_e, pub_n, secret_key)
 
-    for _ in range(20): # warmup for python JIT
+    for _ in range(3): # warmup for python JIT
         oracle.run(ct)
     
-    start = time.perf_counter_ns()
+    samples_times = []
     for _ in range(reps):
+        start = time.perf_counter_ns()
         oracle.run(ct)
-    end = time.perf_counter_ns()
-    baseline = (end - start) / reps
+        end = time.perf_counter_ns()
+        samples_times.append(end - start)
+
+    samples_times = sorted(samples_times)
+    baseline = samples_times[len(samples_times) // 2] # getting the median (outlier resistant)
     print("time to decrypt with oracle", baseline)
 
-    reps = 100
+    reps = 50
     times = []
     for i in range(8):
         secret_key = 0xABCD0123 + i << 2045
         ct = uva_rsa.rsa_enc(pub_e, pub_n, secret_key)
 
-        for _ in range(20): # warmup for python JIT
+        for _ in range(3): # warmup for python JIT
             uva_rsa.mod_exp(ct, secret_key, pub_n)
 
-        start = time.perf_counter_ns()
+        sample_times = []
         for _ in range(reps):
+            start = time.perf_counter_ns()
             uva_rsa.mod_exp(ct, secret_key, pub_n)
-
-        end = time.perf_counter_ns()
-        avg_time = (end - start) / reps
+            end = time.perf_counter_ns()
+            sample_times.append(end - start)
+        
+        sample_times = sorted(sample_times)
+        avg_time = sample_times[len(sample_times) // 2] # getting the median (outlier resistant)
         print("Index", i, "Average time", avg_time)
         times.append(avg_time)
     # print((end - start)/reps) ### print only for testing purpose, not needed in your submission  
@@ -118,8 +125,6 @@ def problem2(pub_e, pub_n, oracle):
     print("Min bit index", min_bit_index)
 
     times = list(map(lambda x: x / 1_000_000_000, times))
-    plt.hist(times)
-    plt.show()
 
     return min_bit_index
 
@@ -249,6 +254,6 @@ if __name__ == '__main__':
 
     # Problem 3
     print("Problem 3:")
-    oracle = uva_rsa.DecryptOracleB(key["d"], key["n"])
-    if problem3(key["e"], key["n"], oracle) == key["d"]:
-        print("Problem 3 correct")
+    # oracle = uva_rsa.DecryptOracleB(key["d"], key["n"])
+    # if problem3(key["e"], key["n"], oracle) == key["d"]:
+    #     print("Problem 3 correct")
