@@ -142,8 +142,10 @@ def problem3(pub_e, pub_n, oracle):
     # generating secret keys to test
     before = time.perf_counter_ns()
 
-    secret_keys = [random.getrandbits(2048) for _ in range(300)]
-    # secret_keys = [uva_rsa.rsa_gen()["d"] for _ in range(50)]
+    # secret_keys = [random.getrandbits(2048) for _ in range(300)]
+    secret_keys = [uva_rsa.rsa_gen()["d"] for _ in range(250)]
+    profile_dist(secret_keys)
+
     after = time.perf_counter_ns()
     print(f"Time taken to generate keys {after - before:.1f}")
 
@@ -225,6 +227,32 @@ def median_measure(func, args, reps=5):
     times = sorted(times)
     return times[len(times) // 2]
 
+
+def profile_dist(secret_keys):
+    """
+    Profiles the distribution of the secret keys
+    """
+    one_counts = [0] * 2048
+    zero_counts = [0] * 2048
+
+    for key in secret_keys:
+        for i, bit in enumerate(fixed_binary(key)):
+            if bit == "0":
+                zero_counts[i] += 1
+            else:
+                one_counts[i] += 1
+
+    print(sum(one_counts), sum(zero_counts))
+
+    for i in range(2048):
+        print("Index", i, "Ones", one_counts[i], "Zeros", zero_counts[i])
+
+    plt.plot(one_counts, label="Ones")
+    # plt.plot(zero_counts, label="Zeros")
+    plt.legend()
+    plt.show()
+
+    input() # waiting
 
 def fixed_binary(x, length=2048) -> str:
     bits = format(x, 'b')
