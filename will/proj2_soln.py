@@ -101,12 +101,12 @@ def problem2(pub_e, pub_n, oracle):
         ct = uva_rsa.rsa_enc(pub_e, pub_n, secret_key)
 
         for _ in range(3): # warmup for python JIT
-            uva_rsa.mod_exp(ct, secret_key, pub_n)
+            uva_rsa.mod_exp(ct, secret_key, pub_e)
 
         sample_times = []
         for _ in range(reps):
             start = time.perf_counter_ns()
-            uva_rsa.mod_exp(ct, secret_key, pub_n)
+            uva_rsa.mod_exp(ct, secret_key, pub_e)
             end = time.perf_counter_ns()
             sample_times.append(end - start)
         
@@ -132,65 +132,82 @@ def problem2(pub_e, pub_n, oracle):
 # Problem 3: The whole 2048 bits
 # Recover the (roughly) 2048 bits of the secret key
 ########################################################### 
-def problem3(pub_e, pub_n, oracle):
+real_secret = 4150452954516788305322334373505934224092414147025341858259381425646659178605691706486212654370727684626846117494529293210823262969746501329504015330861438248564932422166878714870792714969678806278402238259157411843640134215067682273010431589510827287426792759999212883054785908980030403151122652491713875272966953950697706468122810899702465849201975767642644740088526762001961677935216877828845320587721250185528209814840248616253000685484141272453417580384407258920262649904440074465914446977660642607238586680208905768616792883391776390693711645020742189552372320510460581645319646313943217496379479242398240521369
+real_secret = fixed_binary(real_secret)
+def problem3(pub_e, pub_n, oracle, n=100, k=30):
+    # precomputed messages
+    secret_keys = [uva_rsa.rsa_gen()["d"] for _ in range(n)]
+    messages = [random.getrandbits(2048) for _ in range(n)] # should work
+    cts = [uva_rsa.rsa_enc(pub_e, pub_n, msg) for msg in messages]
     
-    # getting a benchmark
-    ct = uva_rsa.rsa_enc(pub_e, pub_n, 0xABCD0123)
-    benchmark = median_measure(oracle.run, [ct]) 
-    print("Benchmark", benchmark)
+    # benchmarking
+    benchmarks = [median_measure(oracle.run, [ct]) for ct in cts]
+    
+    # bits = format(exponent, 'b')
+    # y = 1
+    # for b in bits:
+    #     y = (y * y) % modulus
+    #     if '1' == b:
+    #         y = (y * base) % modulus
+    # return y
 
-    # generating secret keys to test
-    before = time.perf_counter_ns()
+    for i in range(2048):
+        # we have predicted ith bits of the secret key
+        time_to_i = [0] * len(secret_keys) 
+        slow_or_fast_i = [0] * len(secret_keys)
+        time_after_i = [0] * len(secret_keys)
+        for j, key in enumerate(secret_keys):
+            ct = cts[i]
+            index = len(format(key, 'b')) - 2048 + i
 
-    # secret_keys = [random.getrandbits(2048) for _ in range(300)]
-    secret_keys = [uva_rsa.rsa_gen()["d"] for _ in range(250)]
-    profile_dist(secret_keys)
+            # measuring time before
+            y = 1
+            before = time.perf_counter_ns()
+            for _ in range(k):
+                bits = format(key, 'b')
+                y = 1
 
-    after = time.perf_counter_ns()
-    print(f"Time taken to generate keys {after - before:.1f}")
+                if index < 0:
+                    break
 
-    # logging time taken
-    one_times = [0] * 2048
-    zero_times = [0] * 2048
-    one_counts = [0] * 2048
-    zero_counts = [0] * 2048
+                for b in bits[:i]:
+                    y = (y * y) % pub_e
+                    if '1' == b:
+                        y = (y * ct) % pub_e
 
-    for key in secret_keys:
-        for i, bit in enumerate(fixed_binary(key)):
-            if bit == "0":
-                zero_counts[i] += 1
-            else:
-                one_counts[i] += 1
+            after = time.perf_counter_ns()
+            time_to_i[i] = (after - before) / k
 
-    print(sum(one_counts), sum(zero_counts))
+            tmp = y
 
-    for i, key in enumerate(secret_keys):
-        ct = random.getrandbits(2048) # 1's are being generated = good
-        bits = fixed_binary(ct)
+            # checking if (y * ct) % pub_e is fast or slow
+            before = time.perf_counter_ns()
+            for _ in range(k * 10): # we can afford more samples here
+                y = tmp
+                y = (y * y) % pub_e
+                y = (y * ct) % pub_e
+            after = time.perf_counter_ns()
+            slow_or_fast_i[i] = (after - before) / k / 10
 
-        print("Percent ones", sum([1 if bit == "1" else 0 for bit in bits]) / 2048)
-        
-        # jit prevention
-        for _ in range(3):
-            uva_rsa.mod_exp(key, pub_n, ct)
-        
-        time_taken = median_measure(uva_rsa.mod_exp, [key, pub_n, ct])
+            # measuring time after
+            before = time.perf_counter_ns()
+            for _ in range(k):
+                bits = format(key, 'b')
+                y = tmp
+                for b in bits[i:]:
+                    y = (y * y) % pub_e
+                    if '1' == b:
+                        y = (y * ct) % pub_e
+            after = time.perf_counter_ns()
+            time_after_i[i] = (after - before) / k
+
+            
+
+
+        time_taken = median_measure(oracle.run, [ct])
         print(f"{i} Time taken {time_taken/1_000_000:.1f}")
 
-        bits = fixed_binary(key)
-        for j, bit in enumerate(bits):
-            pass
-            if bit == "0":
-                zero_times[j] += time_taken / zero_counts[j]
-            else:
-                one_times[j] += time_taken / one_counts[j]
-
-    for i in range(100):
-        print("0", zero_times[i], "1", one_times[i], "time", benchmark)
-
-    d = 4150452954516788305322334373505934224092414147025341858259381425646659178605691706486212654370727684626846117494529293210823262969746501329504015330861438248564932422166878714870792714969678806278402238259157411843640134215067682273010431589510827287426792759999212883054785908980030403151122652491713875272966953950697706468122810899702465849201975767642644740088526762001961677935216877828845320587721250185528209814840248616253000685484141272453417580384407258920262649904440074465914446977660642607238586680208905768616792883391776390693711645020742189552372320510460581645319646313943217496379479242398240521369
-    bits = fixed_binary(d)
-
+    return
     correct = 0
     for i in range(2048): # note: bits 0 is the most significant bit not the least
         true_val = bits[i]
@@ -281,7 +298,7 @@ if __name__ == '__main__':
     #     print("Problem 1 correct")
 
     # Problem 2
-    print("Problem 2:")
+    # print("Problem 2:")
     # oracle = uva_rsa.DecryptOracleB(key["d"], key["n"])
     # print("Target value:", uva_rsa.prefix(key["d"], 3))
     # if problem2(key["e"], key["n"], oracle) == uva_rsa.prefix(key["d"], 3):
